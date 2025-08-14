@@ -105,18 +105,42 @@ export class FileController {
         currentManual.latest_version_seq || 0
       );
 
-      if (result.success) {
-        // REMOVER LOCK após upload bem-sucedido (NOVO!)
-        if (!shouldCreateNew) {
-          await LockService.removeLock(manualId, targetVersion, username);
-        }
+      if (result.success && result.version) {
+        // SALVAR NO BANCO (CORREÇÃO!)
+        try {
+          if (shouldCreateNew) {
+            // Nova versão - criar no banco
+            await ManualVersionRepository.create(result.version);
 
-        res.status(200).json({
-          ...result,
-          action: shouldCreateNew ? "new_version" : "edit_version",
-          versionNumber: result.version?.version_seq,
-          lockRemoved: !shouldCreateNew,
-        });
+            // Atualizar latest_version_seq no manual
+            await ManualRepository.updateLatestVersion(
+              manualId,
+              result.version.version_seq
+            );
+          } else {
+            // Edição - atualizar no banco
+            await ManualVersionRepository.update(result.version);
+
+            // REMOVER LOCK após edição bem-sucedida
+            await LockService.removeLock(manualId, targetVersion, username);
+          }
+
+          res.status(200).json({
+            ...result,
+            action: shouldCreateNew ? "new_version" : "edit_version",
+            versionNumber: result.version.version_seq,
+            saved: true,
+            lockRemoved: !shouldCreateNew,
+          });
+        } catch (dbError) {
+          console.error("Erro ao salvar no banco:", dbError);
+          res.status(500).json({
+            success: false,
+            message: "Arquivo processado mas erro ao salvar no banco",
+            error:
+              dbError instanceof Error ? dbError.message : "Erro desconhecido",
+          });
+        }
       } else {
         res.status(400).json(result);
       }
@@ -166,12 +190,32 @@ export class FileController {
         0 // Será incrementado automaticamente
       );
 
-      if (result.success) {
-        res.status(200).json({
-          ...result,
-          action: "new_version_forced",
-          versionNumber: result.version?.version_seq,
-        });
+      if (result.success && result.version) {
+        // SALVAR NO BANCO (CORREÇÃO!)
+        try {
+          await ManualVersionRepository.create(result.version);
+
+          // Atualizar latest_version_seq no manual
+          await ManualRepository.updateLatestVersion(
+            manualId,
+            result.version.version_seq
+          );
+
+          res.status(200).json({
+            ...result,
+            action: "new_version_forced",
+            versionNumber: result.version.version_seq,
+            saved: true,
+          });
+        } catch (dbError) {
+          console.error("Erro ao salvar no banco:", dbError);
+          res.status(500).json({
+            success: false,
+            message: "Arquivo processado mas erro ao salvar no banco",
+            error:
+              dbError instanceof Error ? dbError.message : "Erro desconhecido",
+          });
+        }
       } else {
         res.status(400).json(result);
       }
@@ -222,12 +266,26 @@ export class FileController {
         parseInt(versionSeq)
       );
 
-      if (result.success) {
-        res.status(200).json({
-          ...result,
-          action: "edit_version",
-          versionNumber: result.version?.version_seq,
-        });
+      if (result.success && result.version) {
+        // SALVAR NO BANCO (CORREÇÃO!)
+        try {
+          await ManualVersionRepository.update(result.version);
+
+          res.status(200).json({
+            ...result,
+            action: "edit_version",
+            versionNumber: result.version.version_seq,
+            saved: true,
+          });
+        } catch (dbError) {
+          console.error("Erro ao salvar no banco:", dbError);
+          res.status(500).json({
+            success: false,
+            message: "Arquivo processado mas erro ao salvar no banco",
+            error:
+              dbError instanceof Error ? dbError.message : "Erro desconhecido",
+          });
+        }
       } else {
         res.status(400).json(result);
       }
